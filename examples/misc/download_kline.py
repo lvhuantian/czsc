@@ -11,116 +11,11 @@ from pytdx.hq import TdxHq_API
 from pytdx.config.hosts import hq_hosts
 import pandas as pd
 import os
+from utils import search_best_tdx, hku_catch
+from constants import *
 
 
-class MARKET:
-    SH = 'SH'
-    SZ = 'SZ'
-    BJ = 'BJ'
-
-
-g_market_list = [MARKET.SH, MARKET.SZ, MARKET.BJ]
-
-
-class MARKETID:
-    SH = 1
-    SZ = 2
-    BJ = 3
-
-
-class STOCKTYPE:
-    BLOCK = 0  # 板块
-    A = 1  # A股
-    INDEX = 2  # 指数
-    B = 3  # B股
-    FUND = 4  # 基金（非ETF）
-    ETF = 5  # ETF
-    ND = 6  # 国债
-    BOND = 7  # 其他债券
-    GEM = 8  # 创业板
-    START = 9  # 科创板
-    A_BJ = 11  # 北交所A股
-
-
-def get_a_stktype_list():
-    """获取A股市场证券类型元组，含B股"""
-    return (STOCKTYPE.A, STOCKTYPE.INDEX, STOCKTYPE.B, STOCKTYPE.GEM, STOCKTYPE.START, STOCKTYPE.A_BJ)
-
-
-def get_exception_info():
-    info = sys.exc_info()
-    return "{}: {}".format(info[0].__name__, info[1])
-
-
-def ping(ip, port=7709, multithread=False, timeout=1):
-    api = TdxHq_API(multithread=multithread)
-    success = False
-    starttime = time.time()
-    success = False
-    try:
-        if api.connect(ip, port, time_out=timeout):
-            # x = api.get_security_count(0)
-            # x = api.get_index_bars(7, 1, '000001', 800, 100)
-            x = api.get_security_bars(7, 0, '000001', 800, 100)
-            if x:
-                success = True
-    except Exception as e:
-        print(e)
-        pass
-    endtime = time.time()
-    return (success, endtime - starttime, ip, port)
-
-
-def search_best_tdx():
-    def ping2(host):
-        return ping(host[0], host[1], host[2])
-
-    hosts = [(host[1], host[2], True) for host in hq_hosts]
-    with futures.ThreadPoolExecutor() as executor:
-        res = executor.map(ping2, hosts, timeout=2)
-    x = [i for i in res if i[0] == True]
-    x.sort(key=lambda item: item[1])
-    return x
-
-
-def hku_catch(ret=None, trace=False, callback=None, retry=1, with_msg=False, re_raise=False):
-    """捕获发生的异常, 包装方式: @hku_catch()
-    :param ret: 异常发生时返回值, with_msg为True时, 返回为 (ret, errmsg)
-    :param boolean trace: 打印异常堆栈信息
-    :param func callback: 发生异常后的回调函数, 入参同func
-    :param int retry: 尝试执行的次数
-    :param boolean with_msg: 是否返回异常错误信息, 为True时, 函数返回为 (ret, errmsg)
-    :param boolean re_raise: 是否将错误信息以异常的方式重新抛出
-    """
-    def hku_catch_wrap(func):
-        @functools.wraps(func)
-        def wrappedFunc(*args, **kargs):
-            for i in range(retry):
-                errmsg = ""
-                try:
-                    val = func(*args, **kargs)
-                    return (val, errmsg) if with_msg else val
-                except Exception:
-                    errmsg = "{} [{}.{}]".format(get_exception_info(), func.__module__, func.__name__)
-                    if i == (retry - 1):
-                        if callback is not None:
-                            callback(*args, **kargs)
-                        if re_raise:
-                            raise Exception(errmsg)
-                except KeyboardInterrupt:
-                    raise KeyboardInterrupt()
-                except:
-                    errmsg = "Unknown error! {} [{}.{}]".format(get_exception_info(), func.__module__, func.__name__)
-                    if i == (retry - 1):
-                        if callback is not None:
-                            callback(*args, **kargs)
-                        if re_raise:
-                            raise Exception(errmsg)
-                return (ret, errmsg) if with_msg else ret
-
-        return wrappedFunc
-
-    return hku_catch_wrap
+# 参考Hikyuu
 
 
 def guess_1min_n_step(last_datetime):
@@ -147,61 +42,11 @@ def to_pytdx_market(market):
     return pytdx_market[market.upper()]
 
 
-class TDXParams:
-
-    #市场
-
-    MARKET_SZ = 0  # 深圳
-    MARKET_SH = 1  # 上海
-
-    #K线种类
-    # K 线种类
-    # 0 -   5 分钟K 线
-    # 1 -   15 分钟K 线
-    # 2 -   30 分钟K 线
-    # 3 -   1 小时K 线
-    # 4 -   日K 线
-    # 5 -   周K 线
-    # 6 -   月K 线
-    # 7 -   1 分钟
-    # 8 -   1 分钟K 线
-    # 9 -   日K 线
-    # 10 -  季K 线
-    # 11 -  年K 线
-
-    KLINE_TYPE_5MIN = 0
-    KLINE_TYPE_15MIN = 1
-    KLINE_TYPE_30MIN = 2
-    KLINE_TYPE_1HOUR = 3
-    KLINE_TYPE_DAILY = 4
-    KLINE_TYPE_WEEKLY = 5
-    KLINE_TYPE_MONTHLY = 6
-    KLINE_TYPE_EXHQ_1MIN = 7
-    KLINE_TYPE_1MIN = 8
-    KLINE_TYPE_RI_K = 9
-    KLINE_TYPE_3MONTH = 10
-    KLINE_TYPE_YEARLY = 11
-
-
-    # ref : https://github.com/rainx/pytdx/issues/7
-    # 分笔行情最多2000条
-    MAX_TRANSACTION_COUNT = 2000
-    # k先数据最多800条
-    MAX_KLINE_COUNT = 800
-
-
-    # 板块相关参数
-    BLOCK_SZ = "block_zs.dat"
-    BLOCK_FG = "block_fg.dat"
-    BLOCK_GN = "block_gn.dat"
-    BLOCK_DEFAULT = "block.dat"
-
-
 def import_one_stock_data(api, market, ktype, code, ip, port, startDate=199012191500):
     market = market.upper()
     pytdx_market = to_pytdx_market(market)
 
-    last_datetime =startDate
+    last_datetime = startDate
 
     today = datetime.date.today()
     if ktype == 'DAY':
@@ -250,10 +95,11 @@ def import_one_stock_data(api, market, ktype, code, ip, port, startDate=19901219
                 if today_datetime >= bar_datetime > last_datetime \
                         and bar['high'] >= bar['open'] >= bar['low'] > 0 \
                         and bar['high'] >= bar['close'] >= bar['low'] > 0 \
-                        and int(bar['vol']) != 0 and int(bar['amount']*0.001) != 0:
+                        and int(bar['vol']) != 0 and int(bar['amount'] * 0.001) != 0:
                     try:
                         dt = datetime.datetime.strptime(bar['datetime'], '%Y-%m-%d %H:%M')
-                        row = [f'{code}.{market}', dt, bar['datetime'], bar['open'], bar['high'], bar['low'], bar['close'], bar['amount'], bar['vol']]
+                        row = [f'{code}.{market}', dt, bar['datetime'], bar['open'],
+                               bar['high'], bar['low'], bar['close'], bar['amount'], bar['vol']]
                         # row['datetime'] = bar_datetime
                         # row['open'] = bar['open'] * 1000
                         # row['high'] = bar['high'] * 1000
@@ -279,18 +125,7 @@ def import_one_stock_data(api, market, ktype, code, ip, port, startDate=19901219
     return add_record_count
 
 
-
-# class ProgressBar:
-#     def __init__(self, src):
-#         self.src = src
-
-#     def __call__(self, cur, total):
-#         progress = (cur + 1) * 100 // total
-#         # hku_info(f"{self.src.market} {self.src.ktype} 数据: {progress}%")
-#         self.src.queue.put([self.src.task_name, self.src.market, self.src.ktype, progress, 0])
-
-
-class ImportPytdxToH5:
+class ImportPytdx:
     def __init__(self, config, market, ktype, ip, port, dest_dir, start_datetime):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.task_name = 'IMPORT_KDATA'
@@ -307,42 +142,24 @@ class ImportPytdxToH5:
         count = 0
         try:
             api = TdxHq_API()
-            count = import_one_stock_data(api, self.market, self.ktype, 
+            count = import_one_stock_data(api, self.market, self.ktype,
                                           self.config['code'], self.ip, self.port, self.startDatetime)
         except Exception as e:
             print(e)
 
 
-class UsePytdxImportToH5Thread():
+class UsePytdxImportThread():
 
     def __init__(self):
-        self.config = {
-            'code': '300641',
-            'ktype': {
-                'day': False,
-                'min5': False,
-                'min': True,
-                'trans': False,
-                'time': False,
-                'min_start_date': '2024-03-01',
-                'day_start_date': '2024-01-01',
-            },
-            'pytdx': {
-                'use_tdx_number': 10
-            },
-            'dest_dir': '/Users/equation42/Desktop/CZSC/hikyuu'
-        }
-
         self.process_list = []
         self.hosts = []
         self.tasks = []
-
+        self.config = {}
 
     def __del__(self):
         for p in self.process_list:
             if p.is_alive():
                 p.terminate()
-
 
     def init_task(self):
         self.tasks = []
@@ -384,14 +201,13 @@ class UsePytdxImportToH5Thread():
             for i in range(task_count - len(use_hosts)):
                 use_hosts.insert(0, (self.hosts[0][2], self.hosts[0][3]))
 
-
         cur_host = 0
 
         if self.config['ktype']['min']:
             start_date = datetime.datetime.strptime(self.config['ktype']['min_start_date'], '%Y-%m-%d').date()
             for market in [MARKET.SZ]:
                 self.tasks.append(
-                    ImportPytdxToH5(
+                    ImportPytdx(
                         self.config, market,
                         '1MIN', use_hosts[cur_host][0],
                         use_hosts[cur_host][1], self.config['dest_dir'],
@@ -403,7 +219,7 @@ class UsePytdxImportToH5Thread():
         #     start_date = datetime.datetime.strptime(self.config['ktype']['day_start_date'], '%Y-%m-%d').date()
         #     for market in g_market_list:
         #         self.tasks.append(
-        #             ImportPytdxToH5(
+        #             ImportPytdx(
         #                 self.log_queue, self.queue, self.config, market, 'DAY',
         #                 self.quotations, use_hosts[cur_host][0],
         #                 use_hosts[cur_host][1], dest_dir,
@@ -411,13 +227,13 @@ class UsePytdxImportToH5Thread():
         #                 start_date.month * 1000000 + start_date.day * 10000))
         #         cur_host += 1
 
-    def run(self):
+    def run(self, config):
+        self.config = config
         try:
             self.init_task()
             self._run()
         except Exception as e:
             print(e)
-
 
     @hku_catch(trace=True, re_raise=True)
     def _run(self):
@@ -438,5 +254,22 @@ class UsePytdxImportToH5Thread():
 
 
 if __name__ == '__main__':
-    task = UsePytdxImportToH5Thread()
-    task.run()
+    config = {
+        'code': '300641',
+        'ktype': {
+                'day': False,
+                'min5': False,
+                'min': True,
+                'trans': False,
+                'time': False,
+                'min_start_date': '2024-03-01',
+                'day_start_date': '2024-01-01',
+        },
+        'pytdx': {
+            'use_tdx_number': 10
+        },
+        'dest_dir': '/Users/equation42/Desktop/CZSC/hikyuu'
+    }
+
+    task = UsePytdxImportThread()
+    task.run(config)
