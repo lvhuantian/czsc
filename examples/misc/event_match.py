@@ -19,6 +19,7 @@ from czsc.connectors.ts_connector import get_raw_bars, get_symbols, dc
 from czsc.connectors import research
 import glob
 import czsc
+from utils import BaoStock
 
 # pro = ts.pro_api(token="fc90a1fe960ad1301e7b985ce2bf1eef4ac20483edc12f87f54dd3fb")
 
@@ -42,182 +43,130 @@ sys.path.append('/Users/equation42/Hogwarts/GitHub/lvhuantian/czsc/examples')
 
 
 
-# class EventMatchSensor:
-#     def __init__(self, events: List[Dict[str, Any] | Event], symbols: List[str], read_bars: Callable, **kwargs) -> None:
-#         """
-#         事件匹配传感器
+class EventMatchSensor:
+    def __init__(self, events: List[Dict[str, Any] | Event], symbols: List[str], read_bars: Callable, **kwargs) -> None:
+        """
+        事件匹配传感器
 
-#         :param event: 事件配置
-#         :param symbols: 事件匹配的标的
-#         :param read_bars: 读取K线数据的函数，函数签名如下：
-#             read_bars(symbol, freq, sdt, edt, fq='前复权', **kwargs) -> List[RawBar]
+        :param event: 事件配置
+        :param symbols: 事件匹配的标的
+        :param read_bars: 读取K线数据的函数，函数签名如下：
+            read_bars(symbol, freq, sdt, edt, fq='前复权', **kwargs) -> List[RawBar]
 
-#         :param kwargs: 读取K线数据的函数的参数
+        :param kwargs: 读取K线数据的函数的参数
 
-#             - bar_sdt: K线数据的开始时间，格式：2020-01-01
-#             - sdt: 事件匹配的开始时间，格式：2020-01-01
-#             - edt: 事件匹配的结束时间，格式：2020-01-01
-#             - max_workers: 读取K线数据的函数的最大进程数
-#             - signals_module: 信号解析模块，如：czsc.signals
-#             - results_path: 事件匹配结果的保存路径
+            - bar_sdt: K线数据的开始时间，格式：2020-01-01
+            - sdt: 事件匹配的开始时间，格式：2020-01-01
+            - edt: 事件匹配的结束时间，格式：2020-01-01
+            - max_workers: 读取K线数据的函数的最大进程数
+            - signals_module: 信号解析模块，如：czsc.signals
+            - results_path: 事件匹配结果的保存路径
 
-#         """
-#         self.symbols = symbols
-#         self.read_bars = read_bars
-#         self.events = [Event.load(event) if isinstance(event, dict) else event for event in events]
-#         self.events_map = {event.name: event for event in self.events}
-#         self.events_name = [event.name for event in self.events]
-#         self.results_path = kwargs.pop("results_path")
-#         if os.path.exists(self.results_path):
-#             logger.warning(f"文件夹 {self.results_path} 已存在，程序将覆盖该文件夹下的所有文件")
-#         os.makedirs(self.results_path, exist_ok=True)
-#         save_json({e.name: e.dump() for e in self.events}, os.path.join(self.results_path, "events.json"))
+        """
+        self.symbols = symbols
+        self.read_bars = read_bars
+        self.events = [Event.load(event) if isinstance(event, dict) else event for event in events]
+        self.events_map = {event.name: event for event in self.events}
+        self.events_name = [event.name for event in self.events]
+        self.results_path = kwargs.pop("results_path")
+        if os.path.exists(self.results_path):
+            logger.warning(f"文件夹 {self.results_path} 已存在，程序将覆盖该文件夹下的所有文件")
+        os.makedirs(self.results_path, exist_ok=True)
+        save_json({e.name: e.dump() for e in self.events}, os.path.join(self.results_path, "events.json"))
 
-#         logger.add(os.path.join(self.results_path, "event_match_sensor.log"), rotation="1 day", encoding="utf-8")
-#         logger.info(f"事件匹配传感器初始化，共有{len(self.events)}个事件，{len(self.symbols)}个标的")
+        logger.add(os.path.join(self.results_path, "event_match_sensor.log"), rotation="1 day", encoding="utf-8")
+        logger.info(f"事件匹配传感器初始化，共有{len(self.events)}个事件，{len(self.symbols)}个标的")
 
-#         self.signals_module = kwargs.pop("signals_module", "czsc.signals")
-#         self.signals_config = self._get_signals_config()
-#         self.freqs = get_signals_freqs(self.signals_config)
-#         self.base_freq = self.freqs[0]
-#         logger.info(
-#             f"signals_moudle: {self.signals_module}, signals_config: {self.signals_config}, freqs: {self.freqs}"
-#         )
+        self.signals_module = kwargs.pop("signals_module", "misc.signals")
+        self.signals_config = self._get_signals_config()
+        self.freqs = get_signals_freqs(self.signals_config)
+        self.base_freq = self.freqs[0]
+        logger.info(
+            f"signals_moudle: {self.signals_module}, signals_config: {self.signals_config}, freqs: {self.freqs}"
+        )
 
-#         self.bar_sdt = kwargs.pop("bar_sdt", "2017-01-01")
-#         self.sdt = kwargs.pop("sdt", "2018-01-01")
-#         self.edt = kwargs.pop("edt", "2022-01-01")
-#         logger.info(f"bar_sdt: {self.bar_sdt}, sdt: {self.sdt}, edt: {self.edt}")
+        self.bar_sdt = kwargs.pop("bar_sdt", "2017-01-01")
+        self.sdt = kwargs.pop("sdt", "2018-01-01")
+        self.edt = kwargs.pop("edt", "2022-01-01")
+        logger.info(f"bar_sdt: {self.bar_sdt}, sdt: {self.sdt}, edt: {self.edt}")
 
-#         self.kwargs = kwargs
-#         logger.info(f"事件匹配传感器初始化完成，共有{len(self.events)}个事件，{len(self.symbols)}个标的")
-#         self.data = self._multi_symbols(self.symbols, max_workers=self.kwargs.pop("max_workers", 1))
-#         self.data.to_feather(os.path.join(self.results_path, "data.feather"))
+        self.kwargs = kwargs
+        # TODO cache_path这块重构一下
+        self.kwargs['cache_path'] = cache_path
+        logger.info(f"事件匹配传感器初始化完成，共有{len(self.events)}个事件，{len(self.symbols)}个标的")
+        self.data = self._multi_symbols(self.symbols, max_workers=self.kwargs.pop("max_workers", 1))
+        self.data.to_feather(os.path.join(self.results_path, "data.feather"))
 
-#         _res = []
-#         for event_name in self.events_name:
-#             df = self.get_event_csc(event_name)
-#             df = df.set_index("dt")
-#             _res.append(df)
-#         df = pd.concat(_res, axis=1, ignore_index=False).reset_index()
-#         file_csc = os.path.join(self.results_path, f"cross_section_counts.xlsx")
-#         df.to_excel(file_csc, index=False)
-#         logger.info(f"截面匹配次数计算完成，结果保存至：{file_csc}")
+        _res = []
+        for event_name in self.events_name:
+            df = self.get_event_csc(event_name)
+            df = df.set_index("dt")
+            _res.append(df)
+        df = pd.concat(_res, axis=1, ignore_index=False).reset_index()
+        file_csc = os.path.join(self.results_path, f"cross_section_counts.xlsx")
+        df.to_excel(file_csc, index=False)
+        logger.info(f"截面匹配次数计算完成，结果保存至：{file_csc}")
 
-#         # csc = cross section count，表示截面匹配次数
-#         self.csc = df
+        # csc = cross section count，表示截面匹配次数
+        self.csc = df
 
-#     def _get_signals_config(self):
-#         config = []
-#         for event in self.events:
-#             _c = event.get_signals_config(signals_module=self.signals_module)
-#             config.extend(_c)
-#         config = [dict(t) for t in {tuple(d.items()) for d in config}]
-#         return config
+    def _get_signals_config(self):
+        config = []
+        for event in self.events:
+            _c = event.get_signals_config(signals_module=self.signals_module)
+            config.extend(_c)
+        config = [dict(t) for t in {tuple(d.items()) for d in config}]
+        return config
 
-#     def _single_symbol(self, symbol):
-#         """单个symbol的事件匹配"""
-#         try:
-#             bars = self.read_bars(symbol, freq=self.base_freq, sdt=self.bar_sdt, edt=self.edt, **self.kwargs)
-#             sigs = generate_czsc_signals(bars, deepcopy(self.signals_config), sdt=self.sdt, df=True)
-#             events = deepcopy(self.events)
-#             new_cols = []
-#             for event in events:
-#                 e_name = event.name
-#                 sigs[[e_name, f'{e_name}_F']] = sigs.apply(event.is_match, axis=1, result_type="expand")  # type: ignore
-#                 new_cols.extend([e_name, f'{e_name}_F'])
+    def _single_symbol(self, symbol):
+        """单个symbol的事件匹配"""
+        try:
+            bars = self.read_bars(symbol, freq=self.base_freq, sdt=self.bar_sdt, edt=self.edt, **self.kwargs)
+            sigs = generate_czsc_signals(bars, deepcopy(self.signals_config), sdt=self.sdt, df=True)
+            events = deepcopy(self.events)
+            new_cols = []
+            for event in events:
+                e_name = event.name
+                sigs[[e_name, f'{e_name}_F']] = sigs.apply(event.is_match, axis=1, result_type="expand")  # type: ignore
+                new_cols.extend([e_name, f'{e_name}_F'])
 
-#             sigs = sigs[['symbol', 'dt', 'open', 'close', 'high', 'low', 'vol', 'amount'] + new_cols]  # type: ignore
-#             return sigs
-#         except Exception as e:
-#             logger.error(f"{symbol} 事件匹配失败：{e}")
-#             return pd.DataFrame()
+            sigs = sigs[['symbol', 'dt', 'open', 'close', 'high', 'low', 'vol', 'amount'] + new_cols]  # type: ignore
+            return sigs
+        except Exception as e:
+            logger.error(f"{symbol} 事件匹配失败：{e}")
+            return pd.DataFrame()
 
-#     def _multi_symbols(self, symbols: List[str], max_workers=1):
-#         """多个symbol的事件匹配"""
-#         logger.info(f"开始事件匹配，共有{len(symbols)}个标的，max_workers={max_workers}")
-#         dfs = []
-#         if max_workers == 1:
-#             for symbol in symbols:
-#                 dfs.append(self._single_symbol(symbol))
-#         else:
-#             with ProcessPoolExecutor(max_workers) as executor:
-#                 futures = [executor.submit(self._single_symbol, symbol) for symbol in symbols]
-#                 for future in as_completed(futures):
-#                     dfs.append(future.result())
-#         df = pd.concat(dfs, ignore_index=True)
-#         for event_name in self.events_name:
-#             df[event_name] = df[event_name].astype(int)
-#         return df
+    def _multi_symbols(self, symbols: List[str], max_workers=1):
+        """多个symbol的事件匹配"""
+        logger.info(f"开始事件匹配，共有{len(symbols)}个标的，max_workers={max_workers}")
+        dfs = []
+        if max_workers == 1:
+            for symbol in symbols:
+                dfs.append(self._single_symbol(symbol))
+        else:
+            with ProcessPoolExecutor(max_workers) as executor:
+                futures = [executor.submit(self._single_symbol, symbol) for symbol in symbols]
+                for future in as_completed(futures):
+                    dfs.append(future.result())
+        df = pd.concat(dfs, ignore_index=True)
+        for event_name in self.events_name:
+            df[event_name] = df[event_name].astype(int)
+        return df
 
-#     def get_event_csc(self, event_name: str):
-#         """获取事件的截面匹配次数
+    def get_event_csc(self, event_name: str):
+        """获取事件的截面匹配次数
 
-#         csc = cross section count，表示截面匹配次数
+        csc = cross section count，表示截面匹配次数
 
-#         :param event_name: 事件名称
-#         :return: DataFrame
-#         """
-#         df = self.data.copy()
-#         df = df[df[event_name] == 1]
-#         df = df.groupby(["symbol", "dt"])[event_name].sum().reset_index()
-#         df = df.groupby("dt")[event_name].sum().reset_index()
-#         return df
+        :param event_name: 事件名称
+        :return: DataFrame
+        """
+        df = self.data.copy()
+        df = df[df[event_name] == 1]
+        df = df.groupby(["symbol", "dt"])[event_name].sum().reset_index()
+        df = df.groupby("dt")[event_name].sum().reset_index()
+        return df
 
-# TODO 这个方法提取公共
-def get_raw_bars_baostock(symbol, freq, sdt, edt, fq='前复权', **kwargs):
-    """获取 CZSC 库定义的标准 RawBar 对象列表
-
-    :param symbol: 标的代码
-    :param freq: 周期，支持 Freq 对象，或者字符串，如
-            '1分钟', '5分钟', '15分钟', '30分钟', '60分钟', '日线', '周线', '月线', '季线', '年线'
-    :param sdt: 开始时间
-    :param edt: 结束时间
-    :param fq: 除权类型，投研共享数据默认都是后复权，不需要再处理
-    :param kwargs:
-    :return:
-    """
-    # kwargs['fq'] = fq
-    # if freq == "日线":
-    #     file = glob.glob(os.path.join(cache_path, "stocks/day", f"{symbol}.parquet"))[0]
-    # else:
-    #     raise RuntimeError("Please set file path")
-    #     file = glob.glob(os.path.join(cache_path, "*", f"{symbol}.parquet"))[0]
-    # freq = czsc.Freq(freq)
-    # kline = pd.read_parquet(file)
-    # if 'dt' not in kline.columns:
-    #     kline['dt'] = pd.to_datetime(kline['datetime'])
-    # kline = kline[(kline['dt'] >= pd.to_datetime(sdt)) & (kline['dt'] <= pd.to_datetime(edt))]
-    # if kline.empty:
-    #     return []
-    kwargs['fq'] = fq
-    file = glob.glob(os.path.join(cache_path, "*", f"{symbol}.parquet"))[0]
-    freq = czsc.Freq(freq)
-    kline = pd.read_parquet(file)
-    if 'dt' not in kline.columns:
-        kline['dt'] = pd.to_datetime(kline['time'], format='%Y%m%d%H%M%S%f')
-
-    kline['vol'] = kline['volume'].astype(float).round(1)
-    kline['amount'] = kline['amount'].astype(float).round(1)
-    kline['open'] = kline['open'].astype(float).round(2)
-    kline['high'] = kline['high'].astype(float).round(2)
-    kline['low'] = kline['low'].astype(float).round(2)
-    kline['close'] = kline['close'].astype(float).round(2)
-
-    kline['symbol'] = symbol
-
-    kline = kline[(kline['dt'] >= pd.to_datetime(sdt)) & (kline['dt'] <= pd.to_datetime(edt))]
-    if kline.empty:
-        return []
-    _bars = czsc.resample_bars(kline, freq, raw_bars=True, base_freq='15分钟')
-    return _bars
-
-
-from czsc import EventMatchSensor
-class EventMatcher(EventMatchSensor):
-    def __init__(self, events: List[Dict[str, Any] | Event], symbols: List[str], read_bars: Callable[..., Any], **kwargs) -> None:
-        kwargs['signals_module_name'] = 'misc.signals'
-        super().__init__(events, symbols, read_bars, **kwargs)
 
 def use_event_matcher():
     from czsc.connectors.research import get_raw_bars, get_symbols
@@ -226,7 +175,7 @@ def use_event_matcher():
 
     events = [
         {
-            # "name": "三均线",
+            "name": "三均线",
             "operate": "开多",
             # "signals_not": [
             #     "日线_D1_涨跌停V230331_跌停_任意_任意_0",
@@ -241,26 +190,29 @@ def use_event_matcher():
                 }
             ],
         },
-
-        # {"name": "日线CCI多头；不过滤涨跌停",
-        #  "operate": "开多",
-        #  "factors": [{"name": "CCI看多", "signals_all": ["日线_D1CCI14#3#10_BS辅助V230402_多头_任意_任意_0"]}]},
+        {
+            "name": "向上笔",
+            "operate": "开多",
+            "factors": [
+                {
+                    "signals_all": [f"日线_D3B_笔向上_是_向上_任意_0",
+                                    "5分钟_T1445#1450_买区间V240414_是_任意_任意_0"],
+                    "signals_any": [],
+                    "signals_not": [f"日线_D1_涨跌停V230331_涨停_任意_任意_0"],
+                }
+            ],
+        },
     ]
 
-    start_date = "2024-01-02"
-    end_date = "2024-03-29"
 
     ems_params = {
         "events": events,
         "symbols": symbols,
-        "read_bars": get_raw_bars_baostock,
-        # "bar_sdt": start_date,
-        # "sdt": start_date,
-        # "edt": end_date,
+        "read_bars": BaoStock.get_raw_bars_baostock,
         "bar_sdt": "2023-03-01",
         "sdt": "2024-04-09",
-        "edt": "2024-05-31",
-        "max_workers": 1,
+        "edt": "2024-07-03",
+        "max_workers": 2,
         "results_path": r"/Users/equation42/Desktop/CZSC/ems_test",
     }
 

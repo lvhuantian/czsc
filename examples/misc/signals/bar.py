@@ -16,6 +16,8 @@ from czsc.utils.sig import check_pressure_support
 from czsc.signals.tas import update_ma_cache
 from czsc.utils.bar_generator import freq_end_time
 from czsc.utils import single_linear, freq_end_time, get_sub_elements, create_single_signal
+from czsc.objects import BI, ZS
+from czsc.enum import Direction
 import threading
 
 
@@ -284,3 +286,63 @@ def bar_zdt_V230331(c: CZSC, **kwargs) -> OrderedDict:
         v1 = "跌停"
 
     return create_single_signal(k1=k1, k2=k2, k3=k3, v1=v1)
+
+
+def bi_up_V240707(c: CZSC, **kwargs):
+    """笔向上
+
+    参数模板："{freq}_D{di}B_笔向上"
+
+    **信号逻辑：**
+    - 曲折向上一笔认为可以介入
+
+    **信号列表：**
+
+    - Signal('日线_D1B_笔向上_是_向上_任意_0')
+    - Signal('日线_D1B_笔向上_否_其他_其他_0')
+
+
+    :param c: CZSC对象
+    :return: 信号识别结果
+    """
+    di = int(kwargs.get("di", 1))
+    bis: List[BI] = get_sub_elements(c.bi_list, di=di, n=3)
+    k1, k2, k3 = f"{c.freq.value}_D{di}B_笔向上".split("_")
+    v1 = '否'
+    v2 = '其他'
+    v3 = '其他'
+
+    if is_bis_up_v2(bis):
+        v1 = '是'
+        v2 = '向上'
+        v3 = '任意'
+
+    return create_single_signal(k1=k1, k2=k2, k3=k3, v1=v1, v2=v2, v3=v3)
+
+
+def is_bis_up(bis: List[BI]):
+    """判断 bis 中的连续笔是否是向上的"""
+    if not bis or len(bis) < 3 and len(bis) % 2 == 0:
+        return False
+
+    assert bis[1].fx_b.dt > bis[0].fx_b.dt, "时间由远到近"
+
+    if bis[-1].direction == Direction.Up \
+            and bis[-1].high == max([x.high for x in bis]) \
+            and bis[0].low == min([x.low for x in bis]):
+        return True
+    else:
+        return False
+
+def is_bis_up_v2(bis: List[BI]):
+    """判断 bis 中的连续笔是否是向上的"""
+    if not bis or len(bis) < 3 and len(bis) % 2 == 0:
+        return False
+
+    assert bis[1].fx_b.dt > bis[0].fx_b.dt, "时间由远到近"
+
+    if bis[-1].direction == Direction.Up \
+            and bis[0].low == min([x.low for x in bis]):
+        return True
+    else:
+        return False

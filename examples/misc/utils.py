@@ -11,6 +11,8 @@ from pytdx.hq import TdxHq_API
 from pytdx.config.hosts import hq_hosts
 import pandas as pd
 import os
+import glob
+import czsc
 
 
 def search_best_tdx():
@@ -87,3 +89,41 @@ def hku_catch(ret=None, trace=False, callback=None, retry=1, with_msg=False, re_
         return wrappedFunc
 
     return hku_catch_wrap
+
+
+class BaoStock():
+    @staticmethod
+    def get_raw_bars_baostock(symbol, freq, sdt, edt, fq='前复权', **kwargs):
+        """获取 CZSC 库定义的标准 RawBar 对象列表
+
+        :param symbol: 标的代码
+        :param freq: 周期，支持 Freq 对象，或者字符串，如
+                '1分钟', '5分钟', '15分钟', '30分钟', '60分钟', '日线', '周线', '月线', '季线', '年线'
+        :param sdt: 开始时间
+        :param edt: 结束时间
+        :param fq: 除权类型
+        :param kwargs:
+        :return:
+        """
+
+        kwargs['fq'] = fq
+        file = glob.glob(os.path.join(kwargs['cache_path'], "*", f"{symbol}.parquet"))[0]
+        freq = czsc.Freq(freq)
+        kline = pd.read_parquet(file)
+        if 'dt' not in kline.columns:
+            kline['dt'] = pd.to_datetime(kline['time'], format='%Y%m%d%H%M%S%f')
+
+        kline['vol'] = kline['volume'].astype(float).round(1)
+        kline['amount'] = kline['amount'].astype(float).round(1)
+        kline['open'] = kline['open'].astype(float).round(2)
+        kline['high'] = kline['high'].astype(float).round(2)
+        kline['low'] = kline['low'].astype(float).round(2)
+        kline['close'] = kline['close'].astype(float).round(2)
+
+        kline['symbol'] = symbol
+
+        kline = kline[(kline['dt'] >= pd.to_datetime(sdt)) & (kline['dt'] <= pd.to_datetime(edt))]
+        if kline.empty:
+            return []
+        _bars = czsc.resample_bars(kline, freq, raw_bars=True, base_freq='5分钟')
+        return _bars

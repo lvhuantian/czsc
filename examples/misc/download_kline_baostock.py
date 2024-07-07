@@ -41,10 +41,11 @@ def download_kline(code: str, start_date: str, end_date: str,
 
 if __name__ == '__main__':
     market = MARKET.SH
+    # market = MARKET.SZ
     code = "600733"
     start_date = "2023-01-02"
     end_date = "2024-07-05"
-    freq = "15"
+    freq = "5"
     result_path = "/Users/equation42/Desktop/CZSC2/baostock"
 
     download_kline(code=code, start_date=start_date, end_date=end_date,

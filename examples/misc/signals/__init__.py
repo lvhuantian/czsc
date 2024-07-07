@@ -8,4 +8,5 @@ from misc.signals.bar import (
     bar_closing_buy_V240414,
     bar_closing_sell_V240414,
     bar_zdt_V230331,
+    bi_up_V240707,
 )
