@@ -4,11 +4,13 @@
 """
 import pandas as pd
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List
-from loguru import logger
 from deprecated import deprecated
 from collections import OrderedDict
+import threading
+from loguru import logger
+
 from czsc import envs, CZSC, Signal
 from czsc.traders.base import CzscSignals
 from czsc.objects import RawBar
@@ -18,11 +20,10 @@ from czsc.utils.bar_generator import freq_end_time
 from czsc.utils import single_linear, freq_end_time, get_sub_elements, create_single_signal
 from czsc.objects import BI, ZS
 from czsc.enum import Direction
-import threading
 
 
 holding_stocks = {}
-lock =  threading.RLock()
+lock = threading.RLock()
 def update_holding_stocks(code: str, dt: datetime):
     lock.acquire()
     try:
@@ -32,6 +33,7 @@ def update_holding_stocks(code: str, dt: datetime):
     finally:
         lock.release()
 
+# TODO 需要code参数
 def get_holding_stocks():
     lock.acquire()
     try:
@@ -40,10 +42,20 @@ def get_holding_stocks():
         k = list(holding_stocks.keys())[0]
         return k, holding_stocks[k]
     except Exception as e:
-        print(e)
+        logger.error(e)
     finally:
         lock.release()
     return None, None
+
+def release_holding_stocks(code: str):
+    with lock:
+        try:
+            if len(holding_stocks.keys()) == 0:
+                return 
+            del holding_stocks[code]
+        except Exception as e:
+            logger.error(e)
+    return 
 
 
 def bar_triple_V240413(c: CZSC, **kwargs) -> OrderedDict:
@@ -178,8 +190,9 @@ def bar_closing_sell_V240414(c: CZSC, **kwargs) -> OrderedDict:
     if t1 <= dt.strftime("%H%M") < t2:
         _, b_dt = get_holding_stocks()
         if b_dt:
-            if dt.strftime("%Y%m%d") >= b_dt.strftime("%Y%m%d"):
+            if dt.strftime("%Y%m%d") > b_dt.strftime("%Y%m%d"):
                 v = "是" 
+                release_holding_stocks(c.bars_raw[-1].symbol)
     else:
         v = "否"
     return create_single_signal(k1=k1, k2=k2, k3=k3, v1=v)

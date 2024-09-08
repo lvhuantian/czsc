@@ -1,18 +1,22 @@
 import logging
 import datetime
 from multiprocessing import Queue, Process
-from pytdx.hq import TdxHq_API
 import functools
 import asyncio
 import sys
 import time
+import os
+import glob
+
+from constants import *
+
 from concurrent import futures
+from pytdx.hq import TdxHq_API
 from pytdx.hq import TdxHq_API
 from pytdx.config.hosts import hq_hosts
 import pandas as pd
-import os
-import glob
 import czsc
+import akshare as ak
 
 
 def search_best_tdx():
@@ -127,3 +131,40 @@ class BaoStock():
             return []
         _bars = czsc.resample_bars(kline, freq, raw_bars=True, base_freq='5分钟')
         return _bars
+
+
+def get_stk_code_name_list(market: str) -> list:
+    """
+    获取指定证券交易所股票代码与名称列表
+    :return: 代码名称对组成的列表：[{'code': 'code1': 'name': 'name1'}, ...]
+    """
+    # 获取深圳股票代码表
+    if market == MARKET.SZ:
+        # ind_list = ["A股列表", "B股列表"]
+        ind_list = ["A股列表"]
+        df = None
+        for ind in ind_list:
+            tmp_df = ak.stock_info_sz_name_code(ind)
+            tmp_df.rename(columns={'A股代码': 'code', 'A股简称': 'name'}, inplace=True)
+            df = pd.concat([df, tmp_df]) if df is not None else tmp_df
+        print("获取深圳证券交易所股票数量: {}", len(df) if df is not None else 0)
+        return df[['code', 'name']].to_dict(orient='records') if df is not None else []
+
+    # 获取上证股票代码表
+    if market == MARKET.SH:
+        # ind_list = ["主板A股", "主板B股", "科创板"]
+        ind_list = ["主板A股"]
+        df = None
+        for ind in ind_list:
+            tmp_df = ak.stock_info_sh_name_code(ind)
+            tmp_df.rename(columns={'证券代码': 'code', '证券简称': 'name'}, inplace=True)
+            df = pd.concat([df, tmp_df]) if df is not None else tmp_df
+        print("获取上海证券交易所股票数量: {}", len(df) if df is not None else 0)
+        return df[['code', 'name']].to_dict(orient='records') if df is not None else []
+
+    # 获取北京股票代码表
+    if market == MARKET.BJ:
+        df = ak.stock_info_bj_name_code()
+        df.rename(columns={'证券代码': 'code', '证券简称': 'name'}, inplace=True)
+        print("获取北京证券交易所股票数量: {}", len(df) if df is not None else 0)
+        return df[['code', 'name']].to_dict(orient='records') if df is not None else []

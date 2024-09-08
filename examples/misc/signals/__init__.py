@@ -10,3 +10,7 @@ from misc.signals.bar import (
     bar_zdt_V230331,
     bi_up_V240707,
 )
+from misc.signals.breakout import (
+    bar_closing_sell_V240914,
+    bar_fluctuate_breakout,
+)
