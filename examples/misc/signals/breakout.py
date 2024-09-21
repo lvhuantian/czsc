@@ -11,6 +11,8 @@ from collections import OrderedDict
 import threading
 from loguru import logger
 
+from utils import get_signal_detail
+
 from czsc import envs, CZSC, Signal
 from czsc.traders.base import CzscSignals
 from czsc.objects import RawBar
@@ -121,6 +123,41 @@ def hit_up_limit(c: CZSC) -> bool:
     return False
 
 
+def record_signal_detail(c: CZSC):
+    """记录信号细节"""
+
+    # 当前第一根K线
+    cur_bar = c.bars_raw[-1]
+
+    last_day_end_bar = c.bars_raw[-2]
+
+    incr = (cur_bar.open - last_day_end_bar.close) / last_day_end_bar.close
+
+    first_up_limit_dt = get_first_up_limit_stocks(cur_bar.symbol)
+
+    i = 1
+    days = 1
+    vol = 0
+    while c.bars_raw[-2-i].dt.strftime("%Y%m%d") >= first_up_limit_dt.strftime("%Y%m%d"):
+        vol += c.bars_raw[-2-i].amount
+        if c.bars_raw[-2-i].dt.strftime("%H%M") == "0935":
+            days += 1
+        i += 1
+
+    avg_vol = vol / days
+
+    k = cur_bar.dt.strftime("%Y%m%d") + "#" + cur_bar.symbol
+    signal_detail = get_signal_detail()
+    if k not in signal_detail:
+        signal_detail[k] = {
+            "code": cur_bar.symbol,
+            "avg_vol": avg_vol,
+            "incr": incr,
+            "first_up_limit_dt": first_up_limit_dt,
+            "fluctuate_days": days,
+        }
+
+
 def check_higher_than_last_day(c: CZSC) -> bool:
     # 使用当天的第一根K线进行判断
     cur_bar = c.bars_raw[-1]
@@ -153,12 +190,14 @@ def check_higher_than_last_day(c: CZSC) -> bool:
         if last_day_end_bar.close < last_day_start_bar.open and cur_bar.open > last_day_start_bar.open and \
                 (cur_bar.open - last_day_start_bar.open) / last_day_start_bar.open >= 0.01:
             update_holding_stocks(cur_bar.symbol, cur_bar.dt)
+            record_signal_detail(c)
             return True
 
         # 前一天是阳线
         if last_day_end_bar.close > last_day_start_bar.open and cur_bar.open > last_day_end_bar.close and \
                 (cur_bar.open - last_day_end_bar.close) / last_day_end_bar.close >= 0.01:
             update_holding_stocks(cur_bar.symbol, cur_bar.dt)
+            record_signal_detail(c)
             return True
     
     return False
