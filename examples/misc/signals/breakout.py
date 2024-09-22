@@ -24,6 +24,11 @@ from czsc.objects import BI, ZS
 from czsc.enum import Direction
 
 
+# 5min一个交易日48根K线
+# K线可能存在缺失，直接使用48根K线作为当天的所有K线不合适
+NUM_OF_5MIN_BARS_IN_A_DAY = 48
+
+
 _holding_stocks = {}
 _holding_lock = threading.RLock()
 
@@ -43,23 +48,23 @@ def release_holding_stocks(code: str):
             del _holding_stocks[code]
 
 
-_up_limit_stocks = {}
-_up_limit_lock = threading.RLock()
+_recent_up_limit_stocks = {}
+_recent_up_limit_lock = threading.RLock()
 
-def update_first_up_limit_stocks(code: str, dt: datetime):
-    with _up_limit_lock:
-        _up_limit_stocks[code] = dt
+def update_recent_up_limit_stocks(code: str, dt: datetime):
+    with _recent_up_limit_lock:
+        _recent_up_limit_stocks[code] = dt
 
-def get_first_up_limit_stocks(code: str):
-    with _up_limit_lock:
-        if code in _up_limit_stocks:
-            return _up_limit_stocks[code]
+def get_recent_up_limit_stocks(code: str):
+    with _recent_up_limit_lock:
+        if code in _recent_up_limit_stocks:
+            return _recent_up_limit_stocks[code]
         return None
 
-def release_first_up_limit_stocks(code: str):
-    with _up_limit_lock:
-        if code in _up_limit_stocks:
-            del _up_limit_stocks[code]
+def release_recent_up_limit_stocks(code: str):
+    with _recent_up_limit_lock:
+        if code in _recent_up_limit_stocks:
+            del _recent_up_limit_stocks[code]
 
 
 def bar_closing_sell_V240914(c: CZSC, **kwargs) -> OrderedDict:
@@ -89,31 +94,70 @@ def bar_closing_sell_V240914(c: CZSC, **kwargs) -> OrderedDict:
             if dt.strftime("%Y%m%d") > holding_dt.strftime("%Y%m%d"):
                 v = "是" 
                 release_holding_stocks(symbol)
-                release_first_up_limit_stocks(symbol)
+                release_recent_up_limit_stocks(symbol)
                 logger.info(f"[sell] release holding stocks, symbol: {symbol}, dt: {dt}")
-                logger.info(f"[sell] release first up limit stocks, symbol: {symbol}, dt: {dt}")
+                logger.info(f"[sell] release recent up limit stocks, symbol: {symbol}, dt: {dt}")
                 if hit_up_limit(c):
                     # 只针对5min，当前是15:00的K线，使用9:35的K线进行更新
-                    update_first_up_limit_stocks(c.bars_raw[-48].symbol, c.bars_raw[-48].dt)
-                    logger.info(f"[sell] update first up limit stocks, symbol: {symbol}, dt: {dt}")
+                    day_bars = get_5min_day_bars(c)
+                    update_recent_up_limit_stocks(day_bars[0].symbol, day_bars[0].dt)
+                    logger.info(f"[sell] update recent up limit stocks, symbol: {symbol}, dt: {dt}")
     else:
         v = "否"
     return create_single_signal(k1=k1, k2=k2, k3=k3, v1=v)
+
+
+def get_5min_day_bars(c: CZSC) -> List[RawBar]:
+    """获取当天的所有5分钟K线"""
+    cur_bar = c.bars_raw[-1]
+    day_bars = []
+    if cur_bar.dt.strftime("%H%M") == "1500":
+        i = 1
+        while c.bars_raw[-i].dt.strftime("%Y%m%d") == cur_bar.dt.strftime("%Y%m%d"):
+            day_bars.append(c.bars_raw[-i])
+            i += 1
+        day_bars = day_bars[::-1]
+    else:
+        return day_bars
+
+    if len(day_bars) < NUM_OF_5MIN_BARS_IN_A_DAY:
+        logger.warning(f"[不足{NUM_OF_5MIN_BARS_IN_A_DAY}根K线]code: {cur_bar.symbol} {cur_bar.dt}")
+    elif len(day_bars) > NUM_OF_5MIN_BARS_IN_A_DAY:
+        logger.error(f"[超过{NUM_OF_5MIN_BARS_IN_A_DAY}根K线]code: {cur_bar.symbol} {cur_bar.dt}")
+        raise ValueError(f"[超过{NUM_OF_5MIN_BARS_IN_A_DAY}根K线]code: {cur_bar.symbol} {cur_bar.dt}")
+
+    return day_bars
 
 
 def hit_up_limit(c: CZSC) -> bool:
     """只适用于5分钟K线"""
 
     cur_bar = c.bars_raw[-1]
-    if cur_bar.dt.strftime("%H%M") == "1500":
-        day_bars = get_sub_elements(c.bars_raw, di=1, n=48)
-    else:
+    day_bars = get_5min_day_bars(c)
+    if len(day_bars) == 0:
         return False
+    # if cur_bar.dt.strftime("%H%M") == "1500":
+    #     # day_bars = get_sub_elements(c.bars_raw, di=1, n=48)
+    #     i = 1
+    #     while c.bars_raw[-i].dt.strftime("%Y%m%d") == cur_bar.dt.strftime("%Y%m%d"):
+    #         day_bars.append(c.bars_raw[-i])
+    #         i += 1
+
+    #     day_bars = day_bars[::-1]
+    # else:
+    #     return False
+
+    # if len(day_bars) < NUM_OF_5MIN_BARS_IN_A_DAY:
+    #     logger.warning(f"[不足{NUM_OF_5MIN_BARS_IN_A_DAY}根K线]code: {cur_bar.symbol} {cur_bar.dt}")
+    # elif len(day_bars) > NUM_OF_5MIN_BARS_IN_A_DAY:
+    #     logger.error(f"[超过{NUM_OF_5MIN_BARS_IN_A_DAY}根K线]code: {cur_bar.symbol} {cur_bar.dt}")
+    #     raise ValueError(f"[超过{NUM_OF_5MIN_BARS_IN_A_DAY}根K线]code: {cur_bar.symbol} {cur_bar.dt}")
 
     day_high = max([x.high for x in day_bars])
-    last_day_bar = c.bars_raw[-49]
-    if cur_bar.close == day_high and cur_bar.close > last_day_bar.close:
-        incr = (cur_bar.close - last_day_bar.close) / last_day_bar.close
+    # 上一个交易日的最后一根K线
+    last_day_end_bar = c.bars_raw[-len(day_bars)-1]
+    if cur_bar.close == day_high and cur_bar.close > last_day_end_bar.close:
+        incr = (cur_bar.close - last_day_end_bar.close) / last_day_end_bar.close
         # 主板 创业板 北交所
         # TODO ST 如何计算
         if round(incr, 2) not in [0.1, 0.2, 0.3]:
@@ -133,18 +177,23 @@ def record_signal_detail(c: CZSC):
 
     incr = (cur_bar.open - last_day_end_bar.close) / last_day_end_bar.close
 
-    first_up_limit_dt = get_first_up_limit_stocks(cur_bar.symbol)
+    recent_up_limit_dt = get_recent_up_limit_stocks(cur_bar.symbol)
 
     i = 1
     days = 1
     vol = 0
-    while c.bars_raw[-2-i].dt.strftime("%Y%m%d") >= first_up_limit_dt.strftime("%Y%m%d"):
+    while c.bars_raw[-2-i].dt.strftime("%Y%m%d") >= recent_up_limit_dt.strftime("%Y%m%d"):
         vol += c.bars_raw[-2-i].amount
         if c.bars_raw[-2-i].dt.strftime("%H%M") == "0935":
             days += 1
         i += 1
+        if len(c.bars_raw) <= 3+i:
+            logger.error(f">>>debug>>> 没有找到足够的K线 code: {cur_bar.symbol} {c.bars_raw[-1-i].dt}")
+            break
 
     avg_vol = vol / days
+
+    # TODO 根据横盘调整时间长短进行推荐
 
     k = cur_bar.dt.strftime("%Y%m%d") + "#" + cur_bar.symbol
     signal_detail = get_signal_detail()
@@ -153,7 +202,7 @@ def record_signal_detail(c: CZSC):
             "code": cur_bar.symbol,
             "avg_vol": avg_vol,
             "incr": incr,
-            "first_up_limit_dt": first_up_limit_dt,
+            "recent_up_limit_dt": recent_up_limit_dt,
             "fluctuate_days": days,
         }
 
@@ -177,15 +226,15 @@ def check_higher_than_last_day(c: CZSC) -> bool:
             break
         i += 1
 
-    first_up_limit_dt = get_first_up_limit_stocks(cur_bar.symbol)
+    recent_up_limit_dt = get_recent_up_limit_stocks(cur_bar.symbol)
 
-    if last_day_start_bar is None or first_up_limit_dt is None:
+    if last_day_start_bar is None or recent_up_limit_dt is None:
         return False
 
-    if last_day_start_bar.dt.strftime("%Y%m%d") == first_up_limit_dt.strftime("%Y%m%d"):
+    if last_day_start_bar.dt.strftime("%Y%m%d") == recent_up_limit_dt.strftime("%Y%m%d"):
         return False
 
-    if cur_bar.dt.strftime("%Y%m%d") <= (first_up_limit_dt + timedelta(days=20)).strftime("%Y%m%d"):
+    if cur_bar.dt.strftime("%Y%m%d") <= (recent_up_limit_dt + timedelta(days=20)).strftime("%Y%m%d"):
         # 前一天是阴线
         if last_day_end_bar.close < last_day_start_bar.open and cur_bar.open > last_day_start_bar.open and \
                 (cur_bar.open - last_day_start_bar.open) / last_day_start_bar.open >= 0.01:
@@ -235,31 +284,32 @@ def bar_fluctuate_breakout(c: CZSC, **kwargs) -> OrderedDict:
     if holding_dt:
         return create_single_signal(k1=k1, k2=k2, k3=k3, v1=v)
 
-    first_up_limit_dt = get_first_up_limit_stocks(cur_bar.symbol)
+    recent_up_limit_dt = get_recent_up_limit_stocks(cur_bar.symbol)
 
-    if not first_up_limit_dt:
+    if not recent_up_limit_dt:
         v = "否"
         if hit_up_limit(c):
-            update_first_up_limit_stocks(c.bars_raw[-1].symbol, c.bars_raw[-1].dt)
+            update_recent_up_limit_stocks(cur_bar.symbol, cur_bar.dt)
         return create_single_signal(k1=k1, k2=k2, k3=k3, v1=v)
 
 
-    cur_bar = c.bars_raw[-1]
-    last_day_bar = c.bars_raw[-49]
+    day_bars = get_5min_day_bars(c)
+    # 上一个交易日的最后一根K线
+    last_day_end_bar = c.bars_raw[-len(day_bars)-1]
 
-    # print(f">>>debug>>> {c.bars_raw[-1].dt}")
+    # print(f">>>debug>>> {cur_bar.dt}")
 
     if hit_up_limit(c):
         # 连续涨停，跳过
-        if last_day_bar.dt.strftime("%Y%m%d") == first_up_limit_dt.strftime("%Y%m%d"):
-            update_first_up_limit_stocks(c.bars_raw[-1].symbol, c.bars_raw[-1].dt)
+        if last_day_end_bar.dt.strftime("%Y%m%d") == recent_up_limit_dt.strftime("%Y%m%d"):
+            update_recent_up_limit_stocks(cur_bar.symbol, cur_bar.dt)
             v = "否"
             return create_single_signal(k1=k1, k2=k2, k3=k3, v1=v)
-        elif last_day_bar.dt.strftime("%Y%m%d") > first_up_limit_dt.strftime("%Y%m%d"):
+        elif last_day_end_bar.dt.strftime("%Y%m%d") > recent_up_limit_dt.strftime("%Y%m%d"):
             # 和上一个交易日的K线比较
             if check_higher_than_last_day(c):
                 v = "是"
-                logger.info(f"[buy] code: {cur_bar.symbol}, dt: {cur_bar.dt}, first_up_limit_dt: {first_up_limit_dt}")
+                logger.info(f"[buy] code: {cur_bar.symbol}, dt: {cur_bar.dt}, recent_up_limit_dt: {recent_up_limit_dt}")
                 return create_single_signal(k1=k1, k2=k2, k3=k3, v1=v)
             else:
                 v = "否"
@@ -269,15 +319,14 @@ def bar_fluctuate_breakout(c: CZSC, **kwargs) -> OrderedDict:
             return create_single_signal(k1=k1, k2=k2, k3=k3, v1=v)
     else:
         # 涨停后第二个交易日非涨停，看下一个交易日的K线
-        if last_day_bar.dt.strftime("%Y%m%d") == first_up_limit_dt.strftime("%Y%m%d"):
+        if last_day_end_bar.dt.strftime("%Y%m%d") == recent_up_limit_dt.strftime("%Y%m%d"):
             v = "否"
             return create_single_signal(k1=k1, k2=k2, k3=k3, v1=v)
         # 和上一个交易日的K线比较
         if check_higher_than_last_day(c):
             v = "是"
-            logger.info(f"[buy] code: {cur_bar.symbol}, dt: {cur_bar.dt}, first_up_limit_dt: {first_up_limit_dt}")
+            logger.info(f"[buy] code: {cur_bar.symbol}, dt: {cur_bar.dt}, recent_up_limit_dt: {recent_up_limit_dt}")
             return create_single_signal(k1=k1, k2=k2, k3=k3, v1=v)
 
-    # TODO 根据横盘调整时间长短进行推荐
     v = "否"
     return create_single_signal(k1=k1, k2=k2, k3=k3, v1=v)

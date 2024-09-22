@@ -168,3 +168,9 @@ def get_stk_code_name_list(market: str) -> list:
         df.rename(columns={'证券代码': 'code', '证券简称': 'name'}, inplace=True)
         print("获取北京证券交易所股票数量: {}", len(df) if df is not None else 0)
         return df[['code', 'name']].to_dict(orient='records') if df is not None else []
+
+
+# TODO 要不要加锁
+signal_detail = {}
+def get_signal_detail():
+    return signal_detail
