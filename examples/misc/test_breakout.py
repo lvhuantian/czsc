@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 import glob
 
-from utils import BaoStock
+from utils import BaoStock, get_signal_detail
 
 import czsc
 from loguru import logger
@@ -83,7 +83,7 @@ class Strategy(czsc.CzscStrategyBase):
         return pos_list
 
 
-def run(symbol: str):
+def run(symbol: str, bar_sdt: str, bar_edt: str, replay_sdt: str):
     results_path = Path(f'/Users/equation42/Desktop/CZSC/result/{symbol}')
     logger.add(results_path / "czsc.log", rotation="1 week", encoding="utf-8")
     results_path.mkdir(exist_ok=True, parents=True)
@@ -95,8 +95,8 @@ def run(symbol: str):
     logger.info(f"信号函数配置列表：{tactic.signals_config}")
 
     # replay 查看策略的编写是否正确，执行过程是否符合预期
-    bars = BaoStock.get_raw_bars_baostock(symbol, freq=tactic.base_freq, sdt='20240701', edt='20240906', cache_path=cache_path)
-    trader = tactic.replay(bars, sdt='20240801', res_path=results_path / "replay", refresh=True)
+    bars = BaoStock.get_raw_bars_baostock(symbol, freq=tactic.base_freq, sdt=bar_sdt, edt=bar_edt, cache_path=cache_path)
+    trader = tactic.replay(bars, sdt=replay_sdt, res_path=results_path / "replay", refresh=True)
 
     # 当策略执行过程符合预期后，将持仓策略保存到本地 json 文件中
     tactic.save_positions(results_path / "positions")
@@ -104,10 +104,14 @@ def run(symbol: str):
 
 if __name__ == '__main__':
     symbols = research.get_symbols('baostock')
-    # for symbol in symbols:
-    #     run(symbol=symbol)
-    run(symbol='600552.SH')
+    bar_sdt = '20240501'
+    bar_edt = '20240906'
+    replay_sdt = '20240501'
 
+    run(symbol='600552.SH', bar_sdt=bar_sdt, bar_edt=bar_edt, replay_sdt=replay_sdt)
+
+    signal_detail = get_signal_detail()
+    print(signal_detail)
 
     # TODO 持票后隔日一字板卖不卖
     # TODO 日志打印或记录事件买卖点、买卖价格

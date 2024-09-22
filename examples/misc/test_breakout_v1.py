@@ -10,7 +10,7 @@ from functools import partial
 cache_path = '/Users/equation42/Desktop/CZSC2'
 os.environ['czsc_research_cache'] = cache_path
 
-from utils import BaoStock
+from utils import BaoStock, get_signal_detail
 
 import czsc
 from loguru import logger
@@ -110,6 +110,10 @@ if __name__ == '__main__':
 
     for symbol in tqdm(symbols, desc="Processing symbols"):
         run(symbol=symbol, bar_sdt=bar_sdt, bar_edt=bar_edt, replay_sdt=replay_sdt)
+
+
+    signal_detail = get_signal_detail()
+    print(signal_detail)
 
     # TODO 持票后隔日一字板卖不卖
     # TODO 日志打印或记录事件买卖点、买卖价格
